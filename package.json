@@ -12,6 +12,8 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "docker:up": "docker compose --env-file .env.local up --build",
+    "monitoring:up": "docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.monitoring.yml up --build -d",
+    "monitoring:down": "docker compose --env-file .env.local -f docker-compose.yml -f docker-compose.monitoring.yml down",
     "preview": "vite preview"
   },
   "dependencies": {

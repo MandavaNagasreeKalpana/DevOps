@@ -97,6 +97,8 @@ flowchart LR
     C --> E{Status checks}
     D --> E
     E -->|all green| F[Merge]
+    A --> M[monitoring: promtool checks]
+    M --> E
     A --> G[CodeQL scan]
     G --> E
 ```
@@ -105,6 +107,7 @@ flowchart LR
 | --- | --- |
 | **quality** | `npm ci`, lint (oxlint), typecheck, Vitest unit tests, `npm audit --audit-level=high`, production build |
 | **e2e** (needs quality) | Installs Chromium and runs the Playwright suite against a real Supabase test account; uploads the HTML report as an artifact (kept on failure too) |
+| **monitoring** | Validates the Prometheus config and runs the alert-rule unit tests with `promtool` |
 | **docker** (needs quality) | Builds the image with build args from secrets, starts the container and checks it returns HTTP 200 |
 
 Runs on every push to `main` and every pull request. Outdated runs on the same branch are cancelled automatically.
@@ -145,6 +148,40 @@ docker run --rm -p 8080:80 secure-file-share
 ```
 
 `nginx.conf` provides the SPA fallback, gzip, one-year caching for hashed `/assets`, no-cache for `index.html`, and security headers (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Content-Security-Policy`). The CSP's `connect-src` is filled in with your Supabase URL when the container starts.
+
+### Monitoring
+
+The app can run with a local monitoring stack built from free, open-source Docker images. Nothing extra needs to be installed besides Docker.
+
+```bash
+npm run monitoring:up     # app + Prometheus + Grafana + exporters (reads .env.local)
+npm run monitoring:down   # stop everything
+```
+
+| Service | URL | Purpose |
+| --- | --- | --- |
+| App | http://localhost:8080 | The nginx container |
+| Prometheus | http://127.0.0.1:9090 | Collects metrics and evaluates alert rules |
+| Grafana | http://127.0.0.1:3000 | "Secure File Share - Overview" dashboard (login `admin` / `GRAFANA_ADMIN_PASSWORD`, default `admin`) |
+
+```mermaid
+flowchart LR
+    BB[blackbox exporter] -->|HTTP probes| WEB[web: nginx :80]
+    NE[nginx exporter] -->|stub_status :8081| WEB
+    P[Prometheus] -->|scrape| BB
+    P -->|scrape| NE
+    P -->|alert rules| A[(Alerts)]
+    G[Grafana] -->|PromQL| P
+```
+
+- **Uptime and response time**: the blackbox exporter probes `/` and `/login` every 15 seconds.
+- **Security header check**: a second probe fails if `X-Content-Type-Options`, `X-Frame-Options` or `Content-Security-Policy` disappear.
+- **nginx metrics**: an internal `stub_status` endpoint on port 8081 (never published to the host) feeds active connections and requests per second.
+- **Alert rules** (`monitoring/prometheus/alerts.yml`): `SiteDown`, `NginxDown`, `SecurityHeadersMissing`, `SlowResponse`, `NginxExporterDown`, `HighActiveConnections`. Firing alerts appear in Prometheus (Alerts tab) and on the Grafana dashboard.
+- **Alert unit tests** (`monitoring/prometheus/tests/alerts.test.yml`) run with `promtool` in the CI `monitoring` job, together with a config check.
+- Grafana and Prometheus are bound to `127.0.0.1`, so they are not reachable from other machines. Set `GRAFANA_ADMIN_PASSWORD` in `.env.local` to change the Grafana password.
+
+To see an alert fire, stop the app container (`docker stop <web container>`): after about a minute `SiteDown` and `NginxDown` turn red; start it again and they clear.
 
 ### Security scanning
 

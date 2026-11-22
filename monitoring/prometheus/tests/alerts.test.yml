@@ -1,0 +1,131 @@
+# Unit tests for alerts.yml, run with:
+#   promtool test rules monitoring/prometheus/tests/alerts.test.yml
+rule_files:
+  - ../alerts.yml
+
+evaluation_interval: 15s
+
+tests:
+  - name: SiteDown fires after 1 minute of failed probes
+    interval: 15s
+    input_series:
+      - series: 'probe_success{job="blackbox-http", instance="http://web/"}'
+        values: "1 1 0 0 0 0 0 0"
+    alert_rule_test:
+      - eval_time: 45s
+        alertname: SiteDown
+        exp_alerts: []
+      - eval_time: 1m45s
+        alertname: SiteDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: blackbox-http
+              instance: http://web/
+            exp_annotations:
+              summary: "http://web/ is down"
+              description: "The HTTP probe for http://web/ has failed for more than 1 minute."
+
+  - name: SiteDown stays quiet while the site is up
+    interval: 15s
+    input_series:
+      - series: 'probe_success{job="blackbox-http", instance="http://web/login"}'
+        values: "1x20"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: SiteDown
+        exp_alerts: []
+
+  - name: SlowResponse fires after 5 minutes over 1 second
+    interval: 1m
+    input_series:
+      - series: 'probe_duration_seconds{job="blackbox-http", instance="http://web/"}'
+        values: "2x10"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: SlowResponse
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: SlowResponse
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: blackbox-http
+              instance: http://web/
+            exp_annotations:
+              summary: "http://web/ is responding slowly"
+              description: "Responses have taken longer than 1 second for 5 minutes (current: 2s)."
+
+  - name: SecurityHeadersMissing fires after 2 minutes
+    interval: 30s
+    input_series:
+      - series: 'probe_success{job="blackbox-security-headers", instance="http://web/"}'
+        values: "0x10"
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: SecurityHeadersMissing
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: SecurityHeadersMissing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: blackbox-security-headers
+              instance: http://web/
+            exp_annotations:
+              summary: "Security headers missing on http://web/"
+              description: "One or more of X-Content-Type-Options, X-Frame-Options or Content-Security-Policy is missing or changed."
+
+  - name: NginxExporterDown fires when the scrape fails
+    interval: 15s
+    input_series:
+      - series: 'up{job="nginx", instance="nginx-exporter:9113"}'
+        values: "0x10"
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: NginxExporterDown
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: nginx
+              instance: nginx-exporter:9113
+            exp_annotations:
+              summary: "nginx metrics are unavailable"
+              description: "Prometheus cannot scrape the nginx exporter, so request and connection metrics are missing."
+
+  - name: NginxDown fires when the exporter reports nginx_up 0
+    interval: 15s
+    input_series:
+      - series: 'nginx_up{job="nginx", instance="nginx-exporter:9113"}'
+        values: "1 1 0 0 0 0 0 0 0"
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: NginxDown
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: NginxDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: nginx
+              instance: nginx-exporter:9113
+            exp_annotations:
+              summary: "nginx is not responding to the exporter"
+              description: "The exporter is running but cannot read nginx's stub_status, so the web container is likely stopped or broken."
+
+  - name: HighActiveConnections fires above 100 connections
+    interval: 1m
+    input_series:
+      - series: 'nginx_connections_active{job="nginx", instance="nginx-exporter:9113"}'
+        values: "150x10"
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: HighActiveConnections
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: nginx
+              instance: nginx-exporter:9113
+            exp_annotations:
+              summary: "High number of active connections"
+              description: "nginx has had more than 100 active connections for 5 minutes (current: 150)."
