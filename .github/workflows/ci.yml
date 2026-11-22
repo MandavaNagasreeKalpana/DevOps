@@ -1,0 +1,121 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Quality (lint, types, unit tests, audit, build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test
+      - name: Dependency audit (high severity and above)
+        run: npm audit --audit-level=high
+      - name: Build
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+
+  e2e:
+    name: E2E tests (Playwright)
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+      E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+      E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run E2E tests
+        run: npm run test:e2e
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  docker:
+    name: Docker build and smoke test
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          test -n "$VITE_SUPABASE_URL" || { echo "::error::VITE_SUPABASE_URL secret is missing"; exit 1; }
+          test -n "$VITE_SUPABASE_ANON_KEY" || { echo "::error::VITE_SUPABASE_ANON_KEY secret is missing"; exit 1; }
+          docker build \
+            --build-arg VITE_SUPABASE_URL="$VITE_SUPABASE_URL" \
+            --build-arg VITE_SUPABASE_ANON_KEY="$VITE_SUPABASE_ANON_KEY" \
+            -t secure-file-share:ci .
+      - name: Run container
+        run: docker run -d --name web -p 8080:80 secure-file-share:ci
+      - name: Verify it serves HTTP 200
+        run: |
+          for i in $(seq 1 20); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/ || true)
+            [ "$code" = "200" ] && break
+            sleep 1
+          done
+          echo "GET / -> $code"
+          test "$code" = "200"
+          deep=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/login)
+          echo "GET /login -> $deep"
+          test "$deep" = "200"
+          curl -sI http://localhost:8080/ | grep -i -E 'x-content-type-options|x-frame-options|content-security-policy'
+      - name: Verify the real Supabase config was baked in
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+        run: |
+          # Values are never echoed; grep -q only reports pass/fail.
+          curl -sI http://localhost:8080/ | grep -qiF "connect-src 'self' $VITE_SUPABASE_URL" \
+            && echo "CSP connect-src names the configured Supabase URL" \
+            || { echo "::error::CSP does not contain the configured Supabase URL"; exit 1; }
+          asset=$(curl -s http://localhost:8080/ | grep -o '/assets/[^"]*\.js' | head -1)
+          curl -s "http://localhost:8080$asset" | grep -qF "$VITE_SUPABASE_URL" \
+            && echo "JS bundle contains the configured Supabase URL" \
+            || { echo "::error::JS bundle does not contain the configured Supabase URL"; exit 1; }
+      - name: Container logs (on failure)
+        if: failure()
+        run: docker logs web

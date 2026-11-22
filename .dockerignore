@@ -1,0 +1,13 @@
+node_modules
+dist
+.git
+.gitignore
+.env*
+.github
+test-results
+playwright-report
+blob-report
+tests
+*.md
+Dockerfile
+docker-compose.yml
