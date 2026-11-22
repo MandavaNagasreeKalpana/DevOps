@@ -71,6 +71,21 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
+  monitoring:
+    name: Monitoring config and alert tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Prometheus config and rules
+        run: |
+          docker run --rm -v "$PWD/monitoring/prometheus:/etc/prometheus:ro"             --entrypoint promtool prom/prometheus:v3.5.0             check config /etc/prometheus/prometheus.yml
+      - name: Run alert rule unit tests
+        run: |
+          docker run --rm -v "$PWD/monitoring/prometheus:/w:ro" -w /w/tests             --entrypoint promtool prom/prometheus:v3.5.0             test rules alerts.test.yml
+      - name: Validate Grafana dashboard JSON
+        run: python3 -m json.tool monitoring/grafana/dashboards/secure-file-share.json > /dev/null
+
   docker:
     name: Docker build and smoke test
     needs: quality

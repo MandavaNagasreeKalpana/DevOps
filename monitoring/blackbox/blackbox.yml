@@ -1,0 +1,25 @@
+modules:
+  # GET the page and expect a 2xx response.
+  http_2xx:
+    prober: http
+    timeout: 5s
+    http:
+      method: GET
+      valid_status_codes: []        # empty = any 2xx
+      follow_redirects: true
+      preferred_ip_protocol: ip4
+
+  # GET the page and also require the security headers set in nginx.conf.
+  http_security_headers:
+    prober: http
+    timeout: 5s
+    http:
+      method: GET
+      preferred_ip_protocol: ip4
+      fail_if_header_not_matches:
+        - header: X-Content-Type-Options
+          regexp: "nosniff"
+        - header: X-Frame-Options
+          regexp: "DENY"
+        - header: Content-Security-Policy
+          regexp: "default-src 'self'"
