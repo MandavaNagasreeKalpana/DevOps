@@ -10,6 +10,7 @@ A small web app where users sign up, upload files to a private store, and share 
 - Upload via file picker or drag-and-drop, with client-side validation and a progress/loading state
 - "My Files" table: name, size, type, upload date, Share and Delete
 - Share modal: link expiry of 5 minutes, 1 hour or 24 hours, with Copy button and exact expiry time
+- Share history: every generated link is logged (expiry only, never the URL) and shown as Active/Expired with time left
 - Delete with confirmation (removes storage object and database row)
 - Loading, error and success states throughout
 
@@ -27,7 +28,8 @@ A small web app where users sign up, upload files to a private store, and share 
 - **Row Level Security** – `public.files` has RLS enabled; users can only select, insert and delete rows where `owner_id = auth.uid()`. There is no update policy.
 - **Folder-per-user storage policies** – objects live at `<user_id>/<timestamp>-<sanitized filename>`. Policies on `storage.objects` only allow insert/select/delete when the first folder equals `auth.uid()`.
 - **Expiring signed URLs** – sharing uses `createSignedUrl()` with a 5 min / 1 h / 24 h lifetime, so links stop working automatically.
-- **Client-side file validation** – only PDF, PNG, JPEG, TXT and ZIP up to 10 MB are accepted before upload. The bucket also enforces the same limits server-side (`file_size_limit`, `allowed_mime_types`), so client checks are a convenience, not the only defence.
+- **Share log without secrets** – `public.share_links` stores only the expiry time of each link, never the signed URL. RLS lets a user read and insert only their own rows, and only for files they own; a check constraint caps the expiry at 24 hours.
+- **Client-side file validation** – only PDF, PNG, JPEG, TXT and ZIP up to 10 MB are accepted before upload. The bucket also enforces the same limits server-side (`file_size_limit`, `allowed_mime_types`), so client checks are a convenience, not the only defence. Browser-specific MIME types (e.g. `application/x-zip-compressed` from Windows) are normalised to the canonical type before upload.
 - The anon key is safe to expose in the browser because RLS and storage policies enforce access. Never put the `service_role` key in this app.
 
 ## Folder structure

@@ -4,7 +4,10 @@ import {
   MAX_SIZE,
   buildStoragePath,
   formatSize,
+  isLinkActive,
+  normalizeMimeType,
   sanitizeFileName,
+  timeLeft,
   validateFile,
 } from '../../src/lib/files'
 
@@ -152,5 +155,56 @@ describe('formatSize', () => {
     expect(formatSize(1024 * 1024)).toBe('1.00 MB')
     expect(formatSize(MAX_SIZE)).toBe('10.00 MB')
     expect(formatSize(2.5 * 1024 * 1024)).toBe('2.50 MB')
+  })
+})
+
+describe('normalizeMimeType', () => {
+  it('keeps canonical types', () => {
+    expect(normalizeMimeType({ name: 'a.pdf', type: 'application/pdf' })).toBe('application/pdf')
+  })
+
+  it('maps the Windows ZIP type to application/zip', () => {
+    expect(normalizeMimeType({ name: 'a.zip', type: 'application/x-zip-compressed' })).toBe('application/zip')
+  })
+
+  it('maps legacy JPEG types', () => {
+    expect(normalizeMimeType({ name: 'a.jpg', type: 'image/jpg' })).toBe('image/jpeg')
+    expect(normalizeMimeType({ name: 'a.jpg', type: 'image/pjpeg' })).toBe('image/jpeg')
+  })
+
+  it('ignores case and parameters', () => {
+    expect(normalizeMimeType({ name: 'a.txt', type: 'Text/Plain; charset=utf-8' })).toBe('text/plain')
+  })
+
+  it('falls back to the extension only when no type is reported', () => {
+    expect(normalizeMimeType({ name: 'Report.PDF', type: '' })).toBe('application/pdf')
+    expect(normalizeMimeType({ name: 'noext', type: '' })).toBe('')
+    expect(normalizeMimeType({ name: 'evil.exe', type: '' })).toBe('')
+  })
+
+  it('does not trust the extension when a disallowed type is reported', () => {
+    expect(normalizeMimeType({ name: 'fake.pdf', type: 'text/html' })).toBe('')
+  })
+
+  it('lets validateFile accept a Windows ZIP', () => {
+    expect(validateFile(makeFile('a.zip', 'application/x-zip-compressed', 10))).toBeNull()
+  })
+})
+
+describe('share link helpers', () => {
+  const now = Date.parse('2026-01-01T12:00:00Z')
+
+  it('isLinkActive compares the expiry with now', () => {
+    expect(isLinkActive({ expires_at: '2026-01-01T12:05:00Z' }, now)).toBe(true)
+    expect(isLinkActive({ expires_at: '2026-01-01T12:00:00Z' }, now)).toBe(false)
+    expect(isLinkActive({ expires_at: '2026-01-01T11:00:00Z' }, now)).toBe(false)
+  })
+
+  it('timeLeft shows minutes, hours or expired', () => {
+    expect(timeLeft('2026-01-01T12:04:30Z', now)).toBe('5 min left')
+    expect(timeLeft('2026-01-01T12:59:00Z', now)).toBe('59 min left')
+    expect(timeLeft('2026-01-01T13:00:00Z', now)).toBe('1 h left')
+    expect(timeLeft('2026-01-02T11:00:00Z', now)).toBe('23 h left')
+    expect(timeLeft('2026-01-01T11:59:59Z', now)).toBe('expired')
   })
 })

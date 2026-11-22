@@ -35,3 +35,30 @@ create policy "Read own folder" on storage.objects
 create policy "Delete own folder" on storage.objects
   for delete to authenticated
   using (bucket_id = 'secure-files' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- Share history: one row per generated link. Only the expiry is stored, never the signed URL.
+create table public.share_links (
+  id uuid primary key default gen_random_uuid(),
+  file_id uuid not null references public.files(id) on delete cascade,
+  owner_id uuid not null references auth.users(id) on delete cascade default auth.uid(),
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now(),
+  constraint share_links_expiry_window
+    check (expires_at > created_at and expires_at <= created_at + interval '24 hours 1 minute')
+);
+
+create index share_links_file_id_idx on public.share_links (file_id, created_at desc);
+
+alter table public.share_links enable row level security;
+
+revoke all on public.share_links from anon, authenticated;
+grant select, insert on public.share_links to authenticated;
+
+create policy "Users read own share links" on public.share_links
+  for select using (owner_id = auth.uid());
+-- A user can only log shares for files they own.
+create policy "Users insert own share links" on public.share_links
+  for insert with check (
+    owner_id = auth.uid()
+    and exists (select 1 from public.files f where f.id = file_id and f.owner_id = auth.uid())
+  );
