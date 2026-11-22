@@ -14,6 +14,11 @@ create table public.files (
 
 alter table public.files enable row level security;
 
+-- Newer Supabase projects no longer grant table privileges to API roles by default.
+-- Grant only what the app needs; RLS below still limits each user to their own rows.
+revoke all on public.files from anon, authenticated;
+grant select, insert, delete on public.files to authenticated;
+
 create policy "Users read own files" on public.files
   for select using (owner_id = auth.uid());
 create policy "Users insert own files" on public.files
