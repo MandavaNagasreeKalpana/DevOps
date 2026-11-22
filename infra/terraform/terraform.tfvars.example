@@ -1,0 +1,7 @@
+# Copy to terraform.tfvars to override defaults.
+environment            = "staging"
+app_image              = "secure-file-share:local"
+app_replicas           = 3
+public_port            = 8088
+enable_monitoring      = true
+grafana_admin_password = "change-me"
