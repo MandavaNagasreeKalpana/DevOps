@@ -96,6 +96,10 @@ flowchart LR
     B --> D[docker: build + curl smoke test]
     B --> K[kubernetes: k3s deploy + smoke test]
     K --> E
+    B --> L[load-test: k6 smoke]
+    L --> E
+    A --> T[terraform: fmt + validate]
+    T --> E
     C --> E{Status checks}
     D --> E
     E -->|all green| F[Merge]
@@ -111,6 +115,8 @@ flowchart LR
 | **e2e** (needs quality) | Installs Chromium and runs the Playwright suite against a real Supabase test account; uploads the HTML report as an artifact (kept on failure too) |
 | **monitoring** | Validates the Prometheus config and runs the alert-rule unit tests with `promtool` |
 | **kubernetes** (needs quality) | Validates the manifests with kubeconform, deploys the image to a k3s cluster in Docker and smoke-tests it through the Service |
+| **load-test** (needs quality) | Starts the container and runs the k6 smoke profile; fails on >1% errors or p95 > 500 ms |
+| **terraform** | `terraform fmt -check`, `init` and `validate` for `infra/terraform` |
 | **docker** (needs quality) | Builds the image with build args from secrets, starts the container and checks it returns HTTP 200 |
 
 Runs on every push to `main` and every pull request. Outdated runs on the same branch are cancelled automatically.
@@ -194,6 +200,25 @@ Manifests live in [`k8s/`](k8s/README.md): Deployment (2 replicas, probes, resou
 docker compose --env-file .env.local build
 bash scripts/k8s-local.sh up      # k3s cluster in Docker + deploy + smoke test
 bash scripts/k8s-local.sh down
+```
+
+### Load testing
+
+[`load-test/`](load-test/README.md) contains a k6 script with smoke, load and stress profiles, run from the k6 Docker image. In a recorded stress run inside the k3s cluster, the autoscaler grew the deployment from 2 to 6 pods while serving 59,584 requests with 0% errors (p95 88.7 ms).
+
+```bash
+bash scripts/load-test.sh docker smoke
+bash scripts/load-test.sh k8s stress
+```
+
+### Infrastructure as Code (Terraform)
+
+[`infra/terraform/`](infra/terraform/README.md) provisions a load-balanced staging environment on Docker: a private network, N app containers, an nginx load balancer whose upstream list is generated from them, and the monitoring stack. Terraform runs from its Docker image.
+
+```bash
+bash scripts/terraform.sh init
+bash scripts/terraform.sh apply -auto-approve -var app_replicas=3
+bash scripts/terraform.sh destroy -auto-approve
 ```
 
 ### Security scanning

@@ -112,6 +112,48 @@ jobs:
           kubectl -n secure-file-share get all,events || true
           kubectl -n secure-file-share describe pods || true
 
+  terraform:
+    name: Terraform format and validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.12.2
+      - run: terraform fmt -check -diff -recursive
+      - run: terraform init -backend=false -input=false
+      - run: terraform validate
+
+  load-test:
+    name: Load test (k6 smoke)
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and start the app
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          docker build             --build-arg VITE_SUPABASE_URL="$VITE_SUPABASE_URL"             --build-arg VITE_SUPABASE_ANON_KEY="$VITE_SUPABASE_ANON_KEY"             -t secure-file-share:local .
+          docker run -d --name web secure-file-share:local
+      - name: Run k6 (fails if p95 > 500 ms or errors > 1%)
+        run: |
+          mkdir -p load-test/results
+          docker run --rm --network container:web             -v "$PWD/load-test:/work/load-test" -w /work             -e BASE_URL=http://localhost -e PROFILE=smoke             grafana/k6:1.1.0 run --quiet load-test/load.js
+      - name: Upload k6 summary
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-summary
+          path: load-test/results/summary.json
+          if-no-files-found: ignore
+
   docker:
     name: Docker build and smoke test
     needs: quality
