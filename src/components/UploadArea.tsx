@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import type { DragEvent } from 'react'
 import { BUCKET, supabase } from '../lib/supabase'
-import { buildStoragePath, validateFile } from '../lib/files'
+import { buildStoragePath, normalizeMimeType, validateFile } from '../lib/files'
 
 interface Props {
   userId: string
@@ -22,9 +22,13 @@ export default function UploadArea({ userId, onUploaded, onError }: Props) {
       return false
     }
     const path = buildStoragePath(userId, file.name)
+    const mimeType = normalizeMimeType(file)
+    // supabase-js sends a File with its own reported type, so re-wrap it with the
+    // canonical type; otherwise the bucket rejects e.g. application/x-zip-compressed.
+    const body = file.type === mimeType ? file : new File([file], file.name, { type: mimeType })
     const { error: upErr } = await supabase.storage
       .from(BUCKET)
-      .upload(path, file, { contentType: file.type, upsert: false })
+      .upload(path, body, { contentType: mimeType, upsert: false })
     if (upErr) {
       onError(`Upload failed for "${file.name}": ${upErr.message}`)
       return false
@@ -33,7 +37,7 @@ export default function UploadArea({ userId, onUploaded, onError }: Props) {
       file_name: file.name,
       storage_path: path,
       size_bytes: file.size,
-      mime_type: file.type,
+      mime_type: mimeType,
     })
     if (insErr) {
       // Roll back so no orphaned object remains in storage.

@@ -10,6 +10,7 @@ import {
   hasE2EEnv,
   login,
   rowFor,
+  uniqueName,
   uploadPdf,
 } from './helpers'
 
@@ -97,5 +98,34 @@ test.describe('Secure File Share', () => {
     await expect(page.getByText(`Deleted “${name}”.`)).toBeVisible()
     await expect(rowFor(page, name)).toHaveCount(0)
     expect(await countFilesNamed(name)).toBe(0)
+  })
+
+  test('8. a ZIP reported as application/x-zip-compressed (Windows) is accepted', async ({ page }) => {
+    await login(page)
+    const name = uniqueName('zip')
+    await page.locator('input[type="file"]').setInputFiles({
+      name,
+      mimeType: 'application/x-zip-compressed',
+      buffer: fs.readFileSync(path.join(FIXTURES, 'sample.zip')),
+    })
+    await expect(page.getByText(`Uploaded “${name}”.`)).toBeVisible()
+    await expect(rowFor(page, name)).toContainText('ZIP')
+  })
+
+  test('9. generated links appear in the share history as active', async ({ page }) => {
+    await login(page)
+    const name = await uploadPdf(page)
+    await rowFor(page, name).getByRole('button', { name: 'Share' }).click()
+
+    const dialog = page.getByRole('dialog')
+    const history = dialog.getByRole('region', { name: 'Share history' })
+    await expect(history).toContainText('hasn’t been shared yet')
+
+    await dialog.getByRole('combobox').selectOption(String(60 * 60))
+    await dialog.getByRole('button', { name: 'Generate link' }).click()
+    await expect(history.getByRole('listitem')).toHaveCount(1)
+    await expect(history.getByRole('listitem').first()).toContainText('Active')
+    await expect(history.getByRole('listitem').first()).toContainText('1 h left')
+    await expect(history).toContainText('(1 active)')
   })
 })
