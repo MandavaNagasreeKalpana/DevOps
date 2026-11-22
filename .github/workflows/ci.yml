@@ -86,6 +86,32 @@ jobs:
       - name: Validate Grafana dashboard JSON
         run: python3 -m json.tool monitoring/grafana/dashboards/secure-file-share.json > /dev/null
 
+  kubernetes:
+    name: Kubernetes deploy (k3s) and smoke test
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate manifests (kubeconform)
+        run: |
+          kubectl kustomize k8s > "$RUNNER_TEMP/k8s.yaml"
+          docker run --rm -v "$RUNNER_TEMP:/w:ro" ghcr.io/yannh/kubeconform:v0.7.0             -strict -summary -kubernetes-version 1.33.0 /w/k8s.yaml
+      - name: Build image
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          docker build             --build-arg VITE_SUPABASE_URL="$VITE_SUPABASE_URL"             --build-arg VITE_SUPABASE_ANON_KEY="$VITE_SUPABASE_ANON_KEY"             -t secure-file-share:local .
+      - name: Deploy to k3s and smoke test
+        run: bash scripts/k8s-local.sh up
+      - name: Cluster state (on failure)
+        if: failure()
+        run: |
+          export KUBECONFIG="$RUNNER_TEMP/sfs-k8s/kubeconfig"
+          kubectl -n secure-file-share get all,events || true
+          kubectl -n secure-file-share describe pods || true
+
   docker:
     name: Docker build and smoke test
     needs: quality
