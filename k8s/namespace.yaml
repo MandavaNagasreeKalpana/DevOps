@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: secure-file-share
+  labels:
+    app.kubernetes.io/part-of: secure-file-share
+    # Reject pods that don't meet the "baseline" Pod Security Standard.
+    # (The stock nginx image starts as root, so "restricted" would need an
+    # unprivileged nginx image - listed as a future improvement.)
+    pod-security.kubernetes.io/enforce: baseline

@@ -94,6 +94,8 @@ flowchart LR
 
     B --> C[e2e: Playwright]
     B --> D[docker: build + curl smoke test]
+    B --> K[kubernetes: k3s deploy + smoke test]
+    K --> E
     C --> E{Status checks}
     D --> E
     E -->|all green| F[Merge]
@@ -108,6 +110,7 @@ flowchart LR
 | **quality** | `npm ci`, lint (oxlint), typecheck, Vitest unit tests, `npm audit --audit-level=high`, production build |
 | **e2e** (needs quality) | Installs Chromium and runs the Playwright suite against a real Supabase test account; uploads the HTML report as an artifact (kept on failure too) |
 | **monitoring** | Validates the Prometheus config and runs the alert-rule unit tests with `promtool` |
+| **kubernetes** (needs quality) | Validates the manifests with kubeconform, deploys the image to a k3s cluster in Docker and smoke-tests it through the Service |
 | **docker** (needs quality) | Builds the image with build args from secrets, starts the container and checks it returns HTTP 200 |
 
 Runs on every push to `main` and every pull request. Outdated runs on the same branch are cancelled automatically.
@@ -182,6 +185,16 @@ flowchart LR
 - Grafana and Prometheus are bound to `127.0.0.1`, so they are not reachable from other machines. Set `GRAFANA_ADMIN_PASSWORD` in `.env.local` to change the Grafana password.
 
 To see an alert fire, stop the app container (`docker stop <web container>`): after about a minute `SiteDown` and `NginxDown` turn red; start it again and they clear.
+
+### Kubernetes
+
+Manifests live in [`k8s/`](k8s/README.md): Deployment (2 replicas, probes, resource limits, rolling updates), Service, HorizontalPodAutoscaler (2–6 pods at 60% CPU), PodDisruptionBudget and NetworkPolicy, combined with Kustomize.
+
+```bash
+docker compose --env-file .env.local build
+bash scripts/k8s-local.sh up      # k3s cluster in Docker + deploy + smoke test
+bash scripts/k8s-local.sh down
+```
 
 ### Security scanning
 
