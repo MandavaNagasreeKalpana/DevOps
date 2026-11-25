@@ -63,7 +63,7 @@ jobs:
         run: npm run test:e2e
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: |
@@ -149,7 +149,7 @@ jobs:
           docker run --rm --network container:web             -v "$PWD/load-test:/work/load-test" -w /work             -e BASE_URL=http://localhost -e PROFILE=smoke             grafana/k6:1.1.0 run --quiet load-test/load.js
       - name: Upload k6 summary
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: k6-summary
           path: load-test/results/summary.json
