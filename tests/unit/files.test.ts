@@ -47,7 +47,7 @@ describe('validateFile: type', () => {
 
 describe('validateFile: size', () => {
   it('accepts a file of exactly 10 MB', () => {
-    expect(MAX_SIZE).toBe(10 * 1024 * 1024)
+    expect(MAX_SIZE).toBe(11 * 1024 * 1024) // DEMO: deliberately wrong, CI must block this PR
     expect(validateFile(makeFile('a.pdf', 'application/pdf', MAX_SIZE))).toBeNull()
   })
 
