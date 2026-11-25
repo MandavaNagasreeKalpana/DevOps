@@ -1,5 +1,8 @@
 # Secure File Sharing System
 
+[![CI](https://github.com/MandavaNagasreeKalpana/DevOps/actions/workflows/ci.yml/badge.svg)](https://github.com/MandavaNagasreeKalpana/DevOps/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/MandavaNagasreeKalpana/DevOps/actions/workflows/codeql.yml/badge.svg)](https://github.com/MandavaNagasreeKalpana/DevOps/actions/workflows/codeql.yml)
+
 
 A small web app where users sign up, upload files to a private store, and share them through short-lived signed links. Built with React and Supabase (Auth, Postgres, Storage).
 
